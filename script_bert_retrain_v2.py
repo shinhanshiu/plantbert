@@ -19,7 +19,7 @@
 
 print("\n###################\nImporting packages\n")
 
-import os, json, argparse, pickle, yaml, sys
+import os, json, argparse, pickle, yaml
 import pandas as pd
 from pathlib import Path
 from datasets import Dataset
@@ -38,10 +38,20 @@ def get_args():
     description='Retrain BERT using the plant science history project corpus',
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   
-  parser.add_argument('-c', '--config_path', 
+  parser.add_argument('-c', '--config_file', 
                       type=str,
                       help='Config file path',
-                      required=True)
+                      default='./config.yaml')
+
+  parser.add_argument('-w', '--work_dir', 
+                      type=str,
+                      help='Working directory for saving data and model',
+                      default='./')
+
+  parser.add_argument('-d', '--data_file', 
+                      type=str,
+                      help='Tab-delimited corpus data file',
+                      default='./dataset.tsv.gz')
   
   args = parser.parse_args()
   
@@ -71,37 +81,31 @@ def txt_to_split_dataset(corpus_file, test_size, rand_seed):
     d_split = dataset.train_test_split(test_size=test_size, seed=rand_seed)
 
     print("  save train and test sets into text files")
+    def dataset_to_text(dataset, output_filename):
+      """Utility function to save dataset text to disk"""
+      with open(output_filename, "w") as f:
+        for t in dataset["text"]:
+          print(t, file=f)
+
     dataset_to_text(d_split["train"], train_file)
     dataset_to_text(d_split["test"], test_file)
 
     with open(d_split_file, "wb") as f:
       pickle.dump(d_split, f)
 
-  print(f"  train:{d_split.train.num_rows}, test:{d_split['test'].num_rows}")
+  print(f"  train:{d_split['train'].num_rows}, "+\
+        f"test:{d_split['test'].num_rows}\n")
 
   return d_split
 
-def dataset_to_text(dataset, output_filename="data.txt"):
-  """Utility function to save dataset text to disk"""
-  with open(output_filename, "w") as f:
-    for t in dataset["text"]:
-      print(t, file=f)
-
-def tokenize(d_split, model_dir, config):
-  """Train tokenizer and tokenize datasets"""
-
-  # tokenization config
-  config_t   = config['tokenization']
-  vocab_size = int(config_t['vocab_size'])
-  max_length = int(config_t['max_length'])
+def train_tokenizer(train_file, model_dir, config):
+  """Train tokenizer"""
 
   # for checking if tokenizer has been trained
   vocab_file               = model_dir / "vocab.txt"
   tokenizer_config_file    = model_dir / "tokenizer_config.json"
-  vocab_is_file            = vocab_file.is_file()
-  tokenizer_config_is_file = tokenizer_config_file.is_file()
 
-  if vocab_is_file and tokenizer_config_is_file:
+  if vocab_file.is_file() and tokenizer_config_file.is_file():
     print("  tokenizer has been trained")
   else:
     print("  train tokenizer")
@@ -109,11 +113,13 @@ def tokenize(d_split, model_dir, config):
     bwp_tokenizer = BertWordPieceTokenizer()
 
     # train the tokenizer
-    bwp_tokenizer.train(files=["train.txt"], vocab_size=vocab_size, 
+    bwp_tokenizer.train(files=[str(train_file)], 
+                        vocab_size=config['tokenize']['vocab_size'], 
                         special_tokens=["[PAD]", "[UNK]", "[CLS]", "[SEP]", 
                                         "[MASK]", "<S>", "<T>"])
 
     # enable truncation up to the maximum 512 tokens
+    max_length = config['tokenize']['max_length']
     bwp_tokenizer.enable_truncation(max_length=max_length)
 
     # save the tokenizer  
@@ -131,37 +137,44 @@ def tokenize(d_split, model_dir, config):
 
   # load trained tokenizer as BertTokenizerFast
   btz_tokenizer = BertTokenizerFast.from_pretrained(model_dir)
+  print("  return: BertTokenizerFast\n")
+
+  return btz_tokenizer
+
+def tokenize(d_split, tokenizer, data_dir, config):
+  '''Tokenize train and test datasets'''
 
   # for checking  if tokenized datasets have been saved
-  train_tokenzied_file = work_dir / "train_dataset_tokenized"
-  test_tokenzied_file  = work_dir / "test_dataset_tokenized"
-  train_tokenized_is_file = train_tokenzied_file.is_file()
-  test_tokenized_is_file  = test_tokenzied_file.is_file()
+  train_tokenzied = data_dir / "train_dataset_tokenized"
+  test_tokenzied  = data_dir / "test_dataset_tokenized"
 
-  if train_tokenized_is_file and test_tokenized_is_file:
+  if train_tokenzied.is_dir() and test_tokenzied.is_dir():
     print("  tokenized datasets have been saved, load them")
     # load the tokenized datasets
-    train_dataset = Dataset.load_from_disk("train_dataset_tokenized")
-    test_dataset  = Dataset.load_from_disk("test_dataset_tokenized")
+    train_dataset = Dataset.load_from_disk(train_tokenzied)
+    test_dataset  = Dataset.load_from_disk(test_tokenzied)
+  
   else:
-    # Tokenize train and test set
+    # Tokenize train and test sets
     def encode(examples):
       """Local function to tokenize the sentences passed with truncation"""
-      return btz_tokenizer(examples["text"], 
-                            truncation=True, 
-                            padding="max_length", 
-                            max_length=max_length, 
-                            return_special_tokens_mask=True)
+      return tokenizer(examples["text"], 
+                       truncation=True, 
+                       padding="max_length", 
+                       max_length=config['tokenize']['max_length'], 
+                       return_special_tokens_mask=True)
 
     print("  tokenize in batches")
     train_dataset = d_split["train"].map(encode, batched=True)
     test_dataset  = d_split["test"].map(encode, batched=True)
 
     print("  save tokenized datasets")
-    train_dataset.save_to_disk("train_dataset_tokenized")
-    test_dataset.save_to_disk("test_dataset_tokenized")
+    train_dataset.save_to_disk(train_tokenzied)
+    test_dataset.save_to_disk(test_tokenzied)
 
-  return train_dataset, test_dataset, btz_tokenizer
+  print(f"  train:{train_dataset.num_rows}, test:{test_dataset.num_rows}\n")
+
+  return train_dataset, test_dataset
 
 def pretrain_bert(train_dataset, test_dataset, tokenizer, model_dir, config):
   '''Retrain BERT
@@ -174,10 +187,7 @@ def pretrain_bert(train_dataset, test_dataset, tokenizer, model_dir, config):
   '''
 
   # BERT configuration
-  bert_config = config['bert_retraining']
-
-  # tokenizer configuration
-  tokenizer_config = config['tokenization']
+  bert_config = config['pretrain']
 
   print("  set dataset format")
   train_dataset.set_format(type="torch",columns=["input_ids", "attention_mask"])
@@ -185,24 +195,19 @@ def pretrain_bert(train_dataset, test_dataset, tokenizer, model_dir, config):
 
   print("  initialize model")
   # initialize the model with the config
-  vocab_size   = int(tokenizer_config['vocab_size'])
-  max_pos_emb  = int(tokenizer_config['max_length'])
+  vocab_size   = config['tokenize']['vocab_size']
+  max_length   = config['tokenize']['max_length']
+
   model_config = BertConfig(vocab_size=vocab_size, 
-                            max_position_embeddings=max_pos_emb)
-  model        = BertForMaskedLM(config=model_config)
+                            max_position_embeddings=max_length)
+  model = BertForMaskedLM(config=model_config)
 
   # initialize the data collator, randomly masking 20% (default is 15%) of the 
   # tokens for the Masked Language Modeling (MLM) task
-  mlm = bert_config['mlm']
-  if mlm == "True":
-    mlm = True
-  else:
-    mlm = False
-
   data_collator = DataCollatorForLanguageModeling(
     tokenizer=tokenizer, 
-    mlm=mlm, 
-    mlm_probability=float(bert_config['mlm_probability'])
+    mlm=bert_config['mlm'], 
+    mlm_probability=bert_config['mlm_prob'],
   )
 
   # Training arguments:
@@ -217,62 +222,73 @@ def pretrain_bert(train_dataset, test_dataset, tokenizer, model_dir, config):
   #   best in terms of loss
   #   save 3 model weights to save space
   training_args = TrainingArguments(
-    output_dir=model_dir,           
-    evaluation_strategy=bert_config['evaluation_strategy'],
-    overwrite_output_dir=bert_config['overwrite_output_dir'],
-    num_train_epochs=bert_config['num_train_epochs'],
-    per_device_train_batch_size=bert_config['per_device_train_batch_size'],
-    gradient_accumulation_steps=bert_config['gradient_accumulation_steps'],
-    per_device_eval_batch_size=bert_config['per_device_eval_batch_size'],
-    logging_steps=bert_config['logging_steps'],
-    save_steps=bert_config['save_steps'],
-    save_safetensors=bert_config['save_safetensors'],
-    # load_best_model_at_end=True,  
-    # save_total_limit=3,
+                output_dir                  = model_dir,           
+                evaluation_strategy         = bert_config['eval_by'],
+                overwrite_output_dir        = bert_config['overwrite_out'],
+                num_train_epochs            = bert_config['num_epochs'],
+                per_device_train_batch_size = bert_config['train_batch_size'],
+                gradient_accumulation_steps = bert_config['grad_acc_steps'],
+                per_device_eval_batch_size  = bert_config['eval_batch_size'],
+                logging_steps               = bert_config['log_steps'],
+                save_steps                  = bert_config['save_steps'],
+                save_safetensors            = bert_config['safetensors'],
+                load_best_model_at_end      = bert_config['load_best'],  
+                # save_total_limit          = bert_config['save_limit'],
   )
 
   # initialize the trainer and pass everything to it
-  trainer = Trainer(
-      model=model,
-      args=training_args,
-      data_collator=data_collator,
-      train_dataset=train_dataset,
-      eval_dataset=test_dataset,
+  trainer = Trainer(model=model,
+                    args=training_args,
+                    data_collator=data_collator,
+                    train_dataset=train_dataset,
+                    eval_dataset=test_dataset,
   )
 
   # train the model
   trainer.train()
 
+  return model
+
 
 ################################################################################
 if __name__== '__main__':
 
-  print("Get config\n")
+  print("Get config")
   args        = get_args()
-  config_path = args.config_path
-  with open(config_path, 'r') as f:
+  work_dir    = Path(args.work_dir)     # working dir
+  data_file   = Path(args.data_file)  # corpus file path
+  config_file = Path(args.config_file)  # config file path
+  print(f"  work_dir: {work_dir}")
+  print(f"  data_file: {data_file}")
+  print(f"  config_file: {config_file}\n")
+
+  with open(config_file, 'r') as f:
     config = yaml.safe_load(f)
 
   # file system and general config
   rand_seed   = config['env']['rand_seed']
-  work_dir    = Path(config['env']['work_dir'])
   model_dir   = work_dir / config['env']['model_dir_name']
   data_dir    = work_dir / config['env']['data_dir_name']
-  corpus_file = data_dir / config['env']['corpus_name']
   test_size   = config['env']['test_size']
 
   # Create directories
-  work_dir.mkdir(parents=True, exist_ok=True)
   model_dir.mkdir(parents=True, exist_ok=True)
+  data_dir.mkdir(parents=True, exist_ok=True)
 
-  print("Convert corpus file to dataset")
-  d_split = txt_to_split_dataset(corpus_file, test_size, rand_seed)
+  print("###\nConvert corpus data file to dataset")
+  d_split = txt_to_split_dataset(data_file, test_size, rand_seed)
 
-  sys.exit(0)
+  print("###\nTrain tokenizer")
+  train_file = data_dir / "train.txt"
+  tokenizer = train_tokenizer(train_file, model_dir, config)
 
-  print("Tokenize dataset")
-  train_dataset, test_dataset, btz_tokenizer = tokenize(d_split, model_dir, 
-                                                        config)
+  print("###\nTokenize dataset")
+  train_tkn, test_tkn = tokenize(d_split, tokenizer, data_dir, config)
 
-  print("Pretrain model")
-  pretrain_bert(train_dataset, test_dataset, btz_tokenizer, model_dir, config)
+  print("###\nPretrain model")
+  model = pretrain_bert(train_tkn, test_tkn, tokenizer, model_dir, config)
+
+  print("###\nDone")
+  print("  tokenizer saved to: ", model_dir)
+  print("  model saved to: ", model_dir)
+  print("  intermediate data in: ", data_dir)  
