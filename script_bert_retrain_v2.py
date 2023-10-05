@@ -249,7 +249,6 @@ def pretrain_bert(train_dataset, test_dataset, tokenizer, model_dir, config):
 
   return model
 
-
 ################################################################################
 if __name__== '__main__':
 
