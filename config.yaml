@@ -11,6 +11,7 @@ tokenize:
   max_length : 512
 
 pretrain:
+  ckpt_model : ""
   mlm : True    # train with masked language modeling
   # probability of masking each token
   mlm_prob : 0.2

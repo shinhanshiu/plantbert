@@ -16,8 +16,11 @@
 #             session_info accelerate pyyaml
 # ```
 #
+# 11/16/23: Training from checkpoint
+#   https://stackoverflow.com/questions/75357653/how-to-resume-a-pytorch-training-of-a-deep-learning-model-while-training-stopped
 # 11/12/23 Multi-GPU support
-#   
+#   https://towardsdatascience.com/a-comprehensive-guide-of-distributed-data-parallel-ddp-2bb1d8b5edfb
+#   Will not implemented it for now.
 #
 
 print("\n###################\nImporting packages\n")
@@ -257,7 +260,7 @@ if __name__== '__main__':
     config = yaml.safe_load(f)
 
   work_dir  = Path(config['env']['work_dir'])
-  data_file = config['env']['data_file']
+  data_file = work_dir / config['env']['data_file']
   print(f"  work_dir: {work_dir}")
   print(f"  data_file: {data_file}")
 
