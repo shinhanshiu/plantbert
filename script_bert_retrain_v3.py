@@ -240,8 +240,15 @@ def pretrain_bert(train_dataset, test_dataset, tokenizer, model_dir, config):
                     eval_dataset=test_dataset,
   )
 
-  # train the model
-  trainer.train()
+  # train the model from checkpoint
+  if "ckpt_model" in config["pretrain"]:
+    ckpt = config["pretrain"]["ckpt_model"]
+    print("  training from:", ckpt)
+    ckpt_path = model_dir / ckpt
+    trainer.train(ckpt_path)
+  else:
+    print("  training from sracth")
+    trainer.train()
 
   return model
 

@@ -11,7 +11,7 @@ tokenize:
   max_length : 512
 
 pretrain:
-  ckpt_model : ""
+  ckpt_model : "checkpoint-11500/"
   mlm : True    # train with masked language modeling
   # probability of masking each token
   mlm_prob : 0.2
@@ -19,9 +19,9 @@ pretrain:
   eval_by : 'steps'
   overwrite_out : True
   # num of training epochs, feel free to tweak
-  num_epochs : 10
+  num_epochs : 20
   # per device training batch size, depend on GPU memory
-  train_batch_size : 20
+  train_batch_size : 21
   # accumulate gradients before weights update 
   grad_acc_steps : 8
   # per device evaluation batch size
