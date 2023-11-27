@@ -1,3 +1,13 @@
+# From: 
+#  https://pytorch.org/tutorials/intermediate/ddp_tutorial.html
+#
+# 11/12/23: Try to see if codes need to be changed to allow parallelism. But 
+#   realize that transformer.Trainer has already incoroporated parallelism so 
+#   additional coding like the following is not necessary. The following is
+#   not used.
+# 
+
+
 import torch
 import torch.distributed as dist
 import torch.nn as nn

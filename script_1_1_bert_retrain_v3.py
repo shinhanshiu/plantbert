@@ -16,11 +16,19 @@
 #             session_info accelerate pyyaml
 # ```
 #
+# 11/21/23:
+# - Trouble shoot resume_from_checkpoint and found out the issue, see 1_2 log.
+#
+# 11/20/23:
+# - Resuming from checkpoint result in a large incresae in loss
+# - Make sure  resume_from_checkpoint argument is used.
+#
 # 11/16/23: Training from checkpoint
-#   https://stackoverflow.com/questions/75357653/how-to-resume-a-pytorch-training-of-a-deep-learning-model-while-training-stopped
+# - https://stackoverflow.com/questions/75357653/how-to-resume-a-pytorch-training-of-a-deep-learning-model-while-training-stopped
+#
 # 11/12/23 Multi-GPU support
-#   https://towardsdatascience.com/a-comprehensive-guide-of-distributed-data-parallel-ddp-2bb1d8b5edfb
-#   Will not implemented it for now.
+# - https://towardsdatascience.com/a-comprehensive-guide-of-distributed-data-parallel-ddp-2bb1d8b5edfb
+# - Will not implemented it as Trainer already has parallelism built in.s
 #
 
 print("\n###################\nImporting packages\n")
@@ -110,12 +118,12 @@ def train_tokenizer(train_file, model_dir, config):
 
     # train the tokenizer
     bwp_tokenizer.train(files=[str(train_file)], 
-                        vocab_size=config['tokenize']['vocab_size'], 
+                        vocab_size=config['bert_config']['vocab_size'], 
                         special_tokens=["[PAD]", "[UNK]", "[CLS]", "[SEP]", 
                                         "[MASK]", "<S>", "<T>"])
 
     # enable truncation up to the maximum 512 tokens
-    max_length = config['tokenize']['max_length']
+    max_length = config['bert_config']['max_length']
     bwp_tokenizer.enable_truncation(max_length=max_length)
 
     # save the tokenizer  
@@ -157,7 +165,7 @@ def tokenize(d_split, tokenizer, data_dir, config):
       return tokenizer(examples["text"], 
                        truncation=True, 
                        padding="max_length", 
-                       max_length=config['tokenize']['max_length'], 
+                       max_length=config['bert_config']['max_length'], 
                        return_special_tokens_mask=True)
 
     print("  tokenize in batches")
@@ -183,7 +191,7 @@ def pretrain_bert(train_dataset, test_dataset, tokenizer, model_dir, config):
   '''
 
   # BERT configuration
-  bert_config = config['pretrain']
+  training_arguments = config['training_arguments']
 
   print("  set dataset format")
   train_dataset.set_format(type="torch",columns=["input_ids", "attention_mask"])
@@ -191,8 +199,8 @@ def pretrain_bert(train_dataset, test_dataset, tokenizer, model_dir, config):
 
   print("  initialize model")
   # initialize the model with the config
-  vocab_size   = config['tokenize']['vocab_size']
-  max_length   = config['tokenize']['max_length']
+  vocab_size   = config['bert_config']['vocab_size']
+  max_length   = config['bert_config']['max_length']
 
   model_config = BertConfig(vocab_size=vocab_size, 
                             max_position_embeddings=max_length)
@@ -202,8 +210,8 @@ def pretrain_bert(train_dataset, test_dataset, tokenizer, model_dir, config):
   # tokens for the Masked Language Modeling (MLM) task
   data_collator = DataCollatorForLanguageModeling(
     tokenizer=tokenizer, 
-    mlm=bert_config['mlm'], 
-    mlm_probability=bert_config['mlm_prob'],
+    mlm=training_arguments['mlm'], 
+    mlm_probability=training_arguments['mlm_prob'],
   )
 
   # Training arguments:
@@ -218,18 +226,20 @@ def pretrain_bert(train_dataset, test_dataset, tokenizer, model_dir, config):
   #   best in terms of loss
   #   save 3 model weights to save space
   training_args = TrainingArguments(
-                output_dir                  = model_dir,           
-                evaluation_strategy         = bert_config['eval_by'],
-                overwrite_output_dir        = bert_config['overwrite_out'],
-                num_train_epochs            = bert_config['num_epochs'],
-                per_device_train_batch_size = bert_config['train_batch_size'],
-                gradient_accumulation_steps = bert_config['grad_acc_steps'],
-                per_device_eval_batch_size  = bert_config['eval_batch_size'],
-                logging_steps               = bert_config['log_steps'],
-                save_steps                  = bert_config['save_steps'],
-                save_safetensors            = bert_config['safetensors'],
-                load_best_model_at_end      = bert_config['load_best'],  
-                # save_total_limit          = bert_config['save_limit'],
+          output_dir                  = model_dir,           
+          evaluation_strategy         = training_arguments['eval_strategy'],
+          overwrite_output_dir        = training_arguments['overwrite_out'],
+          num_train_epochs            = training_arguments['num_epochs'],
+          per_device_train_batch_size = training_arguments['train_batch_size'],
+          gradient_accumulation_steps = training_arguments['grad_acc_steps'],
+          per_device_eval_batch_size  = training_arguments['eval_batch_size'],
+          logging_strategy            = training_arguments['logging_strategy'],
+          logging_steps               = training_arguments['log_steps'],
+          save_strategy               = training_arguments['save_strategy'],
+          save_steps                  = training_arguments['save_steps'],
+          save_safetensors            = training_arguments['safetensors'],
+          load_best_model_at_end      = training_arguments['load_best_at_end'],  
+          save_total_limit            = training_arguments['save_total_limit'],
   )
 
   # initialize the trainer and pass everything to it
@@ -241,11 +251,9 @@ def pretrain_bert(train_dataset, test_dataset, tokenizer, model_dir, config):
   )
 
   # train the model from checkpoint
-  if "ckpt_model" in config["pretrain"]:
-    ckpt = config["pretrain"]["ckpt_model"]
-    print("  training from:", ckpt)
-    ckpt_path = model_dir / ckpt
-    trainer.train(ckpt_path)
+  if config['training_arguments']['resume_from_ckpt']:
+    print("  resume from checkpoint")
+    trainer.train(resume_from_checkpoint=True)
   else:
     print("  training from sracth")
     trainer.train()

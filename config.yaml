@@ -6,30 +6,24 @@ env:
   data_file : 'corpus_with_topics.tsv.gz'
   test_size : 0.1
 
-tokenize:
+bert_config:
   vocab_size : 30_522
   max_length : 512
 
-pretrain:
-  ckpt_model : "checkpoint-11500/"
-  mlm : True    # train with masked language modeling
-  # probability of masking each token
-  mlm_prob : 0.2
-  # evaluate each `logging_steps` steps
-  eval_by : 'steps'
-  overwrite_out : True
-  # num of training epochs, feel free to tweak
-  num_epochs : 20
-  # per device training batch size, depend on GPU memory
-  train_batch_size : 21
-  # accumulate gradients before weights update 
-  grad_acc_steps : 8
-  # per device evaluation batch size
-  eval_batch_size : 64
-  # evaluate, log and save every 500 steps
+training_arguments:
+  resume_from_ckpt : True    # resume training from checkpoint
+  mlm : True                 # train with masked language modeling
+  mlm_prob : 0.2             # probability of masking each token
+  eval_strategy : 'steps'    # evaluate each `logging_steps` steps
+  overwrite_out : True       # continue to train if output_dir is a ckpt dir
+  num_epochs : 40            # num of training epochs
+  train_batch_size : 20      # per device training batch size
+  grad_acc_steps : 8         # accumulate gradients before weights update 
+  eval_batch_size : 64       # per device evaluation batch size
+  logging_strategy : 'steps' # evaluate, log every X steps
   log_steps : 500
+  save_strategy : 'steps'    # save checkpoint every X steps
   save_steps : 500
-  # save SafeTensors instead of Tensors 
-  safetensors : True
-  load_best : True
-  save_limit : 3
+  safetensors : True         # save SafeTensors instead of Tensors 
+  load_best_at_end : True
+  save_total_limit : 5
