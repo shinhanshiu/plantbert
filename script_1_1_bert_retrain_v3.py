@@ -61,7 +61,7 @@ def get_args():
   
   return args
 
-def txt_to_split_dataset(corpus_file, test_size, rand_seed):
+def txt_to_split_dataset(corpus_file, test_size, rand_seed, config):
   '''Convert corpus to dataset, do train/test split, then save to disk'''
 
   # check if the split datasets already exist
@@ -77,8 +77,9 @@ def txt_to_split_dataset(corpus_file, test_size, rand_seed):
   else:
     print("  read corpus file into dataframe")
     corpus             = pd.read_csv(corpus_file, sep="\t", compression="gzip")
-    corpus_txt         = corpus[["Corpus", "Topic"]]
-    corpus_txt.columns = ["text", "label"]
+    txt_column         = config["env"]["txt_column"]
+    corpus_txt         = corpus[[txt_column]]
+    corpus_txt.columns = ["text"]
     dataset            = Dataset.from_pandas(corpus_txt)
     
     print("  split train/test")
@@ -290,7 +291,7 @@ if __name__== '__main__':
   data_dir.mkdir(parents=True, exist_ok=True)
 
   print("###\nConvert corpus data file to dataset")
-  d_split = txt_to_split_dataset(data_file, test_size, rand_seed)
+  d_split = txt_to_split_dataset(data_file, test_size, rand_seed, config)
 
   print("###\nTrain tokenizer")
   train_file = data_dir / "train.txt"

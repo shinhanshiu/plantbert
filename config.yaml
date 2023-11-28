@@ -4,6 +4,7 @@ env:
   model_dir_name : 'models'
   data_dir_name : 'data'
   data_file : 'corpus_with_topics.tsv.gz'
+  txt_column: 'Corpus'
   test_size : 0.1
 
 bert_config:
