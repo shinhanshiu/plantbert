@@ -1,6 +1,6 @@
 env:
   rand_seed : 20231002
-  work_dir : '/home/shius/projects/plantbert/'
+  work_dir : '/home/shius/projects/plantbert/1_vanilla_bert'
   model_dir_name : 'models'
   data_dir_name : 'data'
   data_file : 'corpus_with_topics.tsv.gz'
